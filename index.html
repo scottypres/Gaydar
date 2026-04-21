@@ -134,6 +134,7 @@
   let audioFiles = [];
   let volumeWarned = false;
   let lastClick = 0;
+  let autoplayTimer = null;
 
   async function loadAudioList() {
     try {
@@ -195,6 +196,10 @@
 
     resultEl.textContent = '100% gay';
     playRandomAudio();
+
+    if (!autoplayTimer) {
+      autoplayTimer = setInterval(playRandomAudio, 5000);
+    }
   });
 
   function playRandomAudio() {
