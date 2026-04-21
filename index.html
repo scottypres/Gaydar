@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Gaydar</title>
+<style>
+  :root {
+    --pink: #ff4fa3;
+    --purple: #9b4dff;
+    --bg: #0e0e14;
+    --fg: #f4f4f8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(ellipse at top, #1a1028, var(--bg));
+    color: var(--fg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  h1 {
+    font-size: clamp(32px, 8vw, 64px);
+    margin: 0;
+    background: linear-gradient(90deg, #ff4fa3, #ffb24f, #f9f871, #4fff88, #4fb2ff, #9b4dff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: 2px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: center;
+  }
+  button {
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 10px 22px;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--pink), var(--purple));
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(155, 77, 255, 0.35);
+    transition: transform 0.1s ease, opacity 0.2s ease;
+  }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #photo {
+    display: none;
+    max-width: min(80vw, 320px);
+    max-height: 45vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 3px solid transparent;
+    background:
+      linear-gradient(var(--bg), var(--bg)) padding-box,
+      linear-gradient(90deg, #ff4fa3, #ffb24f, #f9f871, #4fff88, #4fb2ff, #9b4dff) border-box;
+  }
+  #result {
+    font-size: clamp(22px, 6vw, 36px);
+    font-weight: 900;
+    background: linear-gradient(90deg, #ff4fa3, #9b4dff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    min-height: 1.2em;
+    text-align: center;
+  }
+  #cameraModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+  #cameraModal.open { display: flex; }
+  #video {
+    width: min(90vw, 420px);
+    max-height: 60vh;
+    border-radius: 14px;
+    background: black;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #status { opacity: 0.65; font-size: 12px; min-height: 1em; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Gaydar</h1>
+
+  <img id="photo" alt="Your selfie" />
+
+  <button id="cameraBtn">📸 Open Camera</button>
+  <button id="calcBtn" style="display:none;">Calculate Gay %</button>
+
+  <div id="result"></div>
+  <div id="status"></div>
+
+  <div id="cameraModal">
+    <video id="video" autoplay playsinline></video>
+    <div class="row">
+      <button id="snapBtn">Take Photo</button>
+      <button id="cancelBtn" style="background:#444;">Cancel</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const cameraBtn = document.getElementById('cameraBtn');
+  const calcBtn = document.getElementById('calcBtn');
+  const photo = document.getElementById('photo');
+  const modal = document.getElementById('cameraModal');
+  const video = document.getElementById('video');
+  const snapBtn = document.getElementById('snapBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+
+  let stream = null;
+  let audioFiles = [];
+  let volumeWarned = false;
+  let lastClick = 0;
+
+  async function loadAudioList() {
+    try {
+      const res = await fetch('audio-list.json', { cache: 'no-store' });
+      if (res.ok) audioFiles = await res.json();
+    } catch (e) { /* ignore */ }
+    if (!Array.isArray(audioFiles) || audioFiles.length === 0) {
+      statusEl.textContent = 'No audio files found in root directory.';
+    }
+  }
+
+  cameraBtn.addEventListener('click', async () => {
+    const ok = confirm('Take a selfie picture');
+    if (!ok) return;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      video.srcObject = stream;
+      modal.classList.add('open');
+    } catch (err) {
+      alert('Could not access camera: ' + err.message);
+    }
+  });
+
+  snapBtn.addEventListener('click', () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    photo.src = canvas.toDataURL('image/png');
+    photo.style.display = 'block';
+    closeCamera();
+    cameraBtn.textContent = '📸 Retake';
+    calcBtn.style.display = 'inline-block';
+  });
+
+  cancelBtn.addEventListener('click', closeCamera);
+
+  function closeCamera() {
+    modal.classList.remove('open');
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+  }
+
+  calcBtn.addEventListener('click', () => {
+    const now = Date.now();
+    if (now - lastClick < 1000) return;
+    lastClick = now;
+
+    if (!volumeWarned) {
+      volumeWarned = true;
+      alert('turn volume 100%');
+    }
+
+    resultEl.textContent = '100% gay';
+    playRandomAudio();
+  });
+
+  function playRandomAudio() {
+    if (!audioFiles.length) {
+      statusEl.textContent = 'No audio files in root directory.';
+      return;
+    }
+    const file = audioFiles[Math.floor(Math.random() * audioFiles.length)];
+    const audio = new Audio(file);
+    audio.play().catch(err => {
+      statusEl.textContent = 'Audio play failed: ' + err.message;
+    });
+    statusEl.textContent = 'Playing: ' + file;
+  }
+
+  loadAudioList();
+})();
+</script>
+</body>
+</html>
