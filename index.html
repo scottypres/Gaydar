@@ -203,7 +203,7 @@
       return;
     }
     const file = audioFiles[Math.floor(Math.random() * audioFiles.length)];
-    const audio = new Audio(file);
+    const audio = new Audio(encodeURIComponent(file));
     audio.play().catch(err => {
       statusEl.textContent = 'Audio play failed: ' + err.message;
     });
