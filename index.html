@@ -52,29 +52,81 @@
   }
   button:active:not(:disabled) { transform: scale(0.97); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #photo {
+  #photoWrap {
     display: none;
+    position: relative;
     max-width: min(80vw, 320px);
     max-height: 45vh;
-    width: auto;
-    height: auto;
-    object-fit: contain;
     border-radius: 14px;
+    overflow: hidden;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     border: 3px solid transparent;
     background:
       linear-gradient(var(--bg), var(--bg)) padding-box,
       linear-gradient(90deg, #ff4fa3, #ffb24f, #f9f871, #4fff88, #4fb2ff, #9b4dff) border-box;
   }
+  #photoWrap.visible { display: block; }
+  #photo { display: block; width: 100%; height: auto; max-height: 45vh; object-fit: contain; }
+  .scan-tint {
+    position: absolute;
+    inset: 0;
+    background: rgba(79, 255, 136, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+  .scanline {
+    position: absolute;
+    left: -5%;
+    right: -5%;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, #4fff88, #ffffff, #4fff88, transparent);
+    box-shadow: 0 0 16px #4fff88, 0 0 32px #4fff88;
+    top: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #photoWrap.scanning .scan-tint { opacity: 1; }
+  #photoWrap.scanning .scanline {
+    opacity: 1;
+    animation: scan 1s linear infinite;
+  }
+  @keyframes scan {
+    0%   { top: -2%; }
+    100% { top: 100%; }
+  }
   #result {
     font-size: clamp(22px, 6vw, 36px);
     font-weight: 900;
-    background: linear-gradient(90deg, #ff4fa3, #9b4dff);
+    background: linear-gradient(90deg, #ff4fa3, #ffb24f, #f9f871, #4fff88, #4fb2ff, #9b4dff);
+    background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
     min-height: 1.2em;
     text-align: center;
+    line-height: 1.1;
+    padding: 0 8px;
+  }
+  #result.pop {
+    animation: pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1), rainbow 2s linear infinite;
+  }
+  @keyframes pop {
+    0%   { transform: scale(0.5); opacity: 0; }
+    60%  { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  @keyframes rainbow {
+    0%   { background-position: 0% 0; }
+    100% { background-position: 200% 0; }
+  }
+  #confetti {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 20;
   }
   #cameraModal {
     display: none;
@@ -96,19 +148,33 @@
     background: black;
   }
   .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-  #status { opacity: 0.65; font-size: 12px; min-height: 1em; text-align: center; }
+  #status {
+    opacity: 0.9;
+    font-size: 13px;
+    min-height: 1em;
+    text-align: center;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: #4fff88;
+    text-shadow: 0 0 8px rgba(79, 255, 136, 0.5);
+  }
 </style>
 </head>
 <body>
   <h1>Gaydar</h1>
 
-  <img id="photo" alt="Your selfie" />
+  <div id="photoWrap">
+    <img id="photo" alt="Your selfie" />
+    <div class="scan-tint"></div>
+    <div class="scanline"></div>
+  </div>
 
   <button id="cameraBtn">📸 Open Camera</button>
   <button id="calcBtn" style="display:none;">Calculate Gay %</button>
 
   <div id="result"></div>
   <div id="status"></div>
+
+  <canvas id="confetti"></canvas>
 
   <div id="cameraModal">
     <video id="video" autoplay playsinline></video>
@@ -123,18 +189,51 @@
   const cameraBtn = document.getElementById('cameraBtn');
   const calcBtn = document.getElementById('calcBtn');
   const photo = document.getElementById('photo');
+  const photoWrap = document.getElementById('photoWrap');
   const modal = document.getElementById('cameraModal');
   const video = document.getElementById('video');
   const snapBtn = document.getElementById('snapBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const statusEl = document.getElementById('status');
   const resultEl = document.getElementById('result');
+  const confettiCanvas = document.getElementById('confetti');
+
+  const METRICS = [
+    'Analyzing eyebrow arch...',
+    'Eyebrow arch: 94%',
+    'Wrist floppiness: CRITICAL',
+    'Measuring hip sway...',
+    'Glitter saturation: 110%',
+    'Snap factor: off the charts',
+    'Thigh gap resonance: positive',
+    'Rainbow aura detected',
+    'Pride pheromones: elevated',
+    'Fabulousness index: 11/10',
+    'Scanning Cher lyric database...',
+    'Cross-referencing with RuPaul...',
+    'Hair bounce coefficient: optimal',
+    'Disco ball reflectivity: 99%',
+    'Mariah whistle tone: detected',
+  ];
+
+  const VERDICTS = [
+    '100% gay',
+    '110% gay (rounding error)',
+    'Gayer than Liberace’s piano',
+    'Certified fabulous',
+    'Pride Parade Grand Marshal',
+    'Gay detected — alert the glitter dispatch',
+    'Off-the-charts homosexual',
+    'Confirmed: fully gay',
+    'Flaming hot — 100%',
+    'Extra gay with a side of sparkle',
+  ];
 
   let stream = null;
   let audioFiles = [];
   let volumeWarned = false;
   let lastClick = 0;
-  let autoplayTimer = null;
+  let scanning = false;
 
   async function loadAudioList() {
     try {
@@ -168,7 +267,7 @@
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     photo.src = canvas.toDataURL('image/png');
-    photo.style.display = 'block';
+    photoWrap.classList.add('visible');
     closeCamera();
     cameraBtn.textContent = '📸 Retake';
     calcBtn.style.display = 'inline-block';
@@ -184,9 +283,9 @@
     }
   }
 
-  calcBtn.addEventListener('click', () => {
+  calcBtn.addEventListener('click', async () => {
     const now = Date.now();
-    if (now - lastClick < 1000) return;
+    if (scanning || now - lastClick < 1000) return;
     lastClick = now;
 
     if (!volumeWarned) {
@@ -194,24 +293,99 @@
       alert('turn volume 100%');
     }
 
-    resultEl.textContent = '100% gay';
-    playRandomAudio();
+    await runScan();
 
-    if (!autoplayTimer) {
-      autoplayTimer = setInterval(playRandomAudio, 5000);
-    }
+    const verdict = VERDICTS[Math.floor(Math.random() * VERDICTS.length)];
+    resultEl.textContent = verdict;
+    resultEl.classList.remove('pop');
+    void resultEl.offsetWidth;
+    resultEl.classList.add('pop');
+
+    burstConfetti();
+    playRandomAudio();
   });
 
+  function runScan() {
+    return new Promise(resolve => {
+      scanning = true;
+      calcBtn.disabled = true;
+      photoWrap.classList.add('scanning');
+      resultEl.textContent = '';
+      let i = 0;
+      statusEl.textContent = METRICS[i % METRICS.length];
+      const ticker = setInterval(() => {
+        i++;
+        statusEl.textContent = METRICS[i % METRICS.length];
+      }, 280);
+      setTimeout(() => {
+        clearInterval(ticker);
+        photoWrap.classList.remove('scanning');
+        statusEl.textContent = '';
+        scanning = false;
+        calcBtn.disabled = false;
+        resolve();
+      }, 2100);
+    });
+  }
+
   function playRandomAudio() {
-    if (!audioFiles.length) {
-      statusEl.textContent = 'No audio files in root directory.';
-      return;
-    }
+    if (!audioFiles.length) return;
     const file = audioFiles[Math.floor(Math.random() * audioFiles.length)];
     const audio = new Audio(encodeURIComponent(file));
-    audio.play().catch(err => {
-      statusEl.textContent = 'Audio play failed: ' + err.message;
-    });
+    audio.play().catch(() => {});
+  }
+
+  function burstConfetti() {
+    const ctx = confettiCanvas.getContext('2d');
+    const W = confettiCanvas.width = window.innerWidth;
+    const H = confettiCanvas.height = window.innerHeight;
+    const colors = ['#ff4fa3', '#ffb24f', '#f9f871', '#4fff88', '#4fb2ff', '#9b4dff', '#ffffff'];
+    const resultRect = resultEl.getBoundingClientRect();
+    const cx = resultRect.left + resultRect.width / 2;
+    const cy = resultRect.top + resultRect.height / 2;
+    const particles = [];
+    const N = 140;
+    for (let i = 0; i < N; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 6 + Math.random() * 10;
+      particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 4,
+        size: 5 + Math.random() * 7,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * Math.PI * 2,
+        vrot: (Math.random() - 0.5) * 0.3,
+        life: 0,
+      });
+    }
+    const gravity = 0.35;
+    const maxLife = 110;
+    function frame() {
+      ctx.clearRect(0, 0, W, H);
+      let alive = false;
+      for (const p of particles) {
+        if (p.life >= maxLife) continue;
+        alive = true;
+        p.vy += gravity;
+        p.vx *= 0.99;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rot += p.vrot;
+        p.life++;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.globalAlpha = Math.max(0, 1 - p.life / maxLife);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.55);
+        ctx.restore();
+      }
+      if (alive) requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, W, H);
+    }
+    requestAnimationFrame(frame);
   }
 
   loadAudioList();
