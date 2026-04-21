@@ -207,7 +207,6 @@
     audio.play().catch(err => {
       statusEl.textContent = 'Audio play failed: ' + err.message;
     });
-    statusEl.textContent = 'Playing: ' + file;
   }
 
   loadAudioList();
